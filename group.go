@@ -122,6 +122,9 @@ func (g *_group) startSender(msg *_message) {
 }
 
 func (g *_group) put(msg *_message) {
+	if g.numSender == 0 {
+		return
+	}
 	msg.addArg("group", g.name)
 	msg.Destination = sender
 	i := int64(g.index) % g.numSender

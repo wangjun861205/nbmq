@@ -161,6 +161,7 @@ func (c *Client) run() {
 	for {
 		select {
 		case <-c.connector.done:
+			fmt.Println("connection has closed")
 			return
 		case msg := <-c.connector.reader.msgChan:
 			c.handle(msg)
