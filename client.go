@@ -38,6 +38,15 @@ func (c *_client) stopClient(msg *_message) {
 
 func (c *_client) write(msg *_message) {
 	go func() {
+		defer func() {
+			err := recover()
+			if err != nil {
+				msg.swap()
+				msg.Type = rep
+				msg.Status = connector_write_error
+				c.route(msg)
+			}
+		}()
 		c.connector.writer.msgChan <- msg
 	}()
 }

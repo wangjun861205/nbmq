@@ -50,6 +50,15 @@ func (r *_receiver) stopReceiver(msg *_message) {
 
 func (r *_receiver) write(msg *_message) {
 	go func() {
+		defer func() {
+			err := recover()
+			if err != nil {
+				msg.swap()
+				msg.Type = rep
+				msg.Status = connector_write_error
+				r.route(msg)
+			}
+		}()
 		r.connector.writer.msgChan <- msg
 	}()
 }

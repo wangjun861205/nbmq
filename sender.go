@@ -25,6 +25,15 @@ func newSender(connector *_connector, controlflow chan *_message) *_sender {
 
 func (s *_sender) write(msg *_message) {
 	go func() {
+		defer func() {
+			err := recover()
+			if err != nil {
+				msg.swap()
+				msg.Type = rep
+				msg.Status = connector_write_error
+				s.route(msg)
+			}
+		}()
 		s.connector.writer.msgChan <- msg
 	}()
 }

@@ -143,6 +143,7 @@ const (
 	queue_not_exists_error             = "queue_not_exists_error"
 	unknown_role_error                 = "unknown_role_error"
 	not_valid_destination_error        = "not_valid_destination_error"
+	connector_write_error              = "connector message channel has closed"
 	unknown_method                     = "unknown_method"
 )
 
