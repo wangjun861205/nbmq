@@ -99,6 +99,13 @@ func (q *_queue) removeReceiver(msg *_message) {
 }
 
 func (q *_queue) addReceiver(msg *_message) {
+	if msg.Source != client {
+		msg.swap()
+		msg.Type = rep
+		msg.Status = role_error
+		q.route(msg)
+		return
+	}
 	connector := msg.getArg("connector").(*_connector)
 	if _, ok := q.receivers[connector]; ok {
 		msg.swap()
@@ -109,32 +116,17 @@ func (q *_queue) addReceiver(msg *_message) {
 	}
 	rec := newReceiver(connector, q.workflow)
 	q.receivers[connector] = rec
-	ctlMsg := newMessage(ctl, queue, listener, stop_and_remove_client, undefined_status)
-	ctlMsg.addArg("connector", connector)
-	q.route(ctlMsg)
+	msg.swap()
+	msg.Type = rep
+	msg.Status = success
+	q.route(msg)
 }
 
 func (q *_queue) startReceiver(msg *_message) {
-	if msg.Status == success {
-		connector := msg.getArg("connector").(*_connector)
-		go q.receivers[connector].run()
-		repMsg := newMessage(rep, queue, receiver, add_receiver, success)
-		repMsg.addArg("connector", connector)
-		q.route(repMsg)
-	}
-}
-
-func (q *_queue) addSender(msg *_message) {
-	groupName := msg.getArg("group").(string)
-	if _, ok := q.groups[groupName]; !ok {
-		msg.swap()
-		msg.Type = rep
-		msg.Source = queue
-		msg.Status = no_group_error
-		q.route(msg)
-		return
-	}
-	msg.Destination = group
+	go q.receivers[msg.getArg("connector").(*_connector)].run()
+	msg.Type = rep
+	msg.Destination = receiver
+	msg.Status = success
 	q.route(msg)
 }
 
@@ -188,13 +180,11 @@ func (q *_queue) route(msg *_message) {
 var queueHandlerMap = map[msgType]map[method]func(*_queue, *_message){
 	ctl: map[method]func(*_queue, *_message){
 		add_receiver:    (*_queue).addReceiver,
+		start_receiver:  (*_queue).startReceiver,
 		add_group:       (*_queue).addGroup,
-		add_sender:      (*_queue).addSender,
 		remove_receiver: (*_queue).removeReceiver,
 	},
-	rep: map[method]func(*_queue, *_message){
-		stop_and_remove_client: (*_queue).startReceiver,
-	},
+	rep: map[method]func(*_queue, *_message){},
 	act: map[method]func(*_queue, *_message){
 		put: (*_queue).put,
 	},
@@ -209,6 +199,13 @@ func (q *_queue) handle(msg *_message) {
 }
 
 func (q *_queue) put(msg *_message) {
+	if msg.Source != receiver {
+		msg.swap()
+		msg.Type = rep
+		msg.Status = role_error
+		q.route(msg)
+		return
+	}
 	msg.addArg("topic", q.topic)
 	if len(q.groups) == 0 {
 		msg.swap()
@@ -234,12 +231,6 @@ func (q *_queue) run() {
 		case <-q.pauseChan:
 			<-q.pauseChan
 			continue
-		case msg := <-q.listener.workflow:
-			if msg.Destination == queue {
-				q.handle(msg)
-			} else {
-				q.route(msg)
-			}
 		case msg := <-q.workflow:
 			if msg.Destination == queue {
 				q.handle(msg)

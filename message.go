@@ -1,13 +1,5 @@
 package nbmq
 
-// type msgType int
-//
-// const (
-// 	ctl msgType = iota
-// 	rep
-// 	act
-// )
-
 type msgType string
 
 const (
@@ -15,19 +7,6 @@ const (
 	rep         = "rep"
 	act         = "act"
 )
-
-// type role int
-//
-// const (
-// 	undefined_role role = iota
-// 	listener
-// 	receiver
-// 	queue
-// 	group
-// 	sender
-// 	client
-// 	reader
-// )
 
 type role string
 
@@ -42,32 +21,6 @@ const (
 	reader              = "reader"
 )
 
-// type method int
-//
-// const (
-// 	undefined_method = iota
-// 	remove_receiver
-// 	remove_sender
-// 	remove_group
-// 	remove_queue
-// 	remove_client
-// 	stop_receiver
-// 	stop_sender
-// 	stop_group
-// 	stop_queue
-// 	stop_client
-// 	stop_and_remove_client
-// 	add_queue
-// 	add_receiver
-// 	add_sender
-// 	add_group
-// 	close_client
-// 	close_receiver
-// 	close_sender
-// 	queues_info
-// 	put
-// )
-
 type method string
 
 const (
@@ -77,7 +30,9 @@ const (
 	remove_group                  = "remove_group"
 	remove_queue                  = "remove_queue"
 	remove_client                 = "remove_client"
+	start_receiver                = "start receiver"
 	stop_receiver                 = "stop_receiver"
+	start_sender                  = "start sender"
 	stop_sender                   = "stop_sender"
 	stop_group                    = "stop_group"
 	stop_queue                    = "stop_queue"
@@ -94,32 +49,6 @@ const (
 	put                           = "put"
 )
 
-// type status int
-//
-// const (
-// 	undefined_status status = iota
-// 	success
-// 	conn_read_error
-// 	conn_write_error
-// 	unmarshal_message_error
-// 	marshal_message_error
-// 	no_topic_arg_error
-// 	no_topic_error
-// 	no_group_error
-// 	topic_exists_error
-// 	receiver_exists_error
-// 	receiver_not_exists_error
-// 	sender_exists_error
-// 	sender_not_exists_error
-// 	group_exists_error
-// 	group_not_exists_error
-// 	client_not_exists_error
-// 	queue_not_exists_error
-// 	unknown_role_error
-// 	not_valid_destination_error
-// 	unknown_method
-// )
-
 type status string
 
 const (
@@ -129,6 +58,7 @@ const (
 	conn_write_error                   = "conn_write_error"
 	unmarshal_message_error            = "unmarshal_message_error"
 	marshal_message_error              = "marshal_message_error"
+	topic_arg_error                    = "topic argument not in ArgMap"
 	no_topic_arg_error                 = "no_topic_arg_error"
 	no_topic_error                     = "no_topic_error"
 	no_group_error                     = "no_group_error"
@@ -144,6 +74,7 @@ const (
 	unknown_role_error                 = "unknown_role_error"
 	not_valid_destination_error        = "not_valid_destination_error"
 	connector_write_error              = "connector message channel has closed"
+	role_error                         = "role error"
 	unknown_method                     = "unknown_method"
 )
 

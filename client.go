@@ -32,7 +32,7 @@ func (c *_client) route(msg *_message) {
 	}()
 }
 
-func (c *_client) stopClient(msg *_message) {
+func (c *_client) stop() {
 	close(c.stopChan)
 }
 
@@ -51,14 +51,42 @@ func (c *_client) write(msg *_message) {
 	}()
 }
 
+func (c *_client) handleAddReceiverRep(msg *_message) {
+	if msg.Status != success {
+		c.write(msg)
+		return
+	}
+	c.stop()
+	removeClientMsg := newMessage(ctl, client, listener, remove_client, undefined_status)
+	c.route(removeClientMsg)
+	startReceiverMsg := newMessage(ctl, client, queue, start_receiver, undefined_status)
+	startReceiverMsg.addArg("topic", msg.getArg("topic"))
+	c.route(startReceiverMsg)
+}
+
+func (c *_client) handleAddSenderRep(msg *_message) {
+	if msg.Status != success {
+		c.write(msg)
+		return
+	}
+	c.stop()
+	removeClientMsg := newMessage(ctl, client, listener, remove_client, undefined_status)
+	c.route(removeClientMsg)
+	startSenderMsg := newMessage(ctl, client, group, start_sender, undefined_status)
+	startSenderMsg.addArg("topic", msg.getArg("topic"))
+	startSenderMsg.addArg("group", msg.getArg("group"))
+	c.route(startSenderMsg)
+}
+
 var clientHandlerMap = map[msgType]map[method]func(*_client, *_message){
 	ctl: map[method]func(*_client, *_message){},
 	rep: map[method]func(*_client, *_message){
+		add_receiver: (*_client).handleAddReceiverRep,
+		add_sender:   (*_client).handleAddSenderRep,
 		queues_info:  (*_client).write,
 		add_queue:    (*_client).write,
-		add_receiver: (*_client).write,
 		add_group:    (*_client).write,
-		add_sender:   (*_client).write,
+		put:          (*_client).write,
 	},
 	act: map[method]func(*_client, *_message){},
 }

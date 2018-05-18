@@ -41,6 +41,13 @@ func (l *_listener) Stop() {
 }
 
 func (l *_listener) addQueue(msg *_message) {
+	if msg.Source != client {
+		msg.swap()
+		msg.Type = rep
+		msg.Status = role_error
+		l.route(msg)
+		return
+	}
 	topic := msg.getArg("topic").(string)
 	if _, ok := l.queues[topic]; ok {
 		msg.Type = rep
@@ -78,23 +85,39 @@ func (l *_listener) listen() {
 
 func (l *_listener) routeToClient(msg *_message) {
 	connector := msg.getArg("connector").(*_connector)
-	go func() {
-		l.clients[connector].controlflow <- msg
-	}()
-}
-
-func (l *_listener) routeToQueue(msg *_message) {
-	topic := msg.getArg("topic").(string)
-	if q, ok := l.queues[topic]; !ok {
+	if c, ok := l.clients[connector]; !ok {
 		msg.swap()
 		msg.Type = rep
-		msg.Source = queue
-		msg.Status = queue_not_exists_error
+		msg.Status = client_not_exists_error
 		l.route(msg)
 	} else {
 		go func() {
-			q.workflow <- msg
+			c.controlflow <- msg
 		}()
+	}
+}
+
+func (l *_listener) routeToQueue(msg *_message) {
+	if t := msg.getArg("topic"); t == nil {
+		msg.swap()
+		msg.Type = rep
+		msg.Source = listener
+		msg.Status = topic_arg_error
+		l.route(msg)
+		return
+	} else {
+		topic := t.(string)
+		if q, ok := l.queues[topic]; !ok {
+			msg.swap()
+			msg.Type = rep
+			msg.Source = listener
+			msg.Status = queue_not_exists_error
+			l.route(msg)
+		} else {
+			go func() {
+				q.workflow <- msg
+			}()
+		}
 	}
 }
 

@@ -44,10 +44,6 @@ func (r *_receiver) route(msg *_message) {
 	}()
 }
 
-func (r *_receiver) stopReceiver(msg *_message) {
-	r.stop()
-}
-
 func (r *_receiver) write(msg *_message) {
 	go func() {
 		defer func() {
@@ -64,12 +60,12 @@ func (r *_receiver) write(msg *_message) {
 }
 
 var receiverHandlerMap = map[msgType]map[method]func(*_receiver, *_message){
-	ctl: map[method]func(*_receiver, *_message){
-		stop_receiver: (*_receiver).stopReceiver,
-	},
+	ctl: map[method]func(*_receiver, *_message){},
 	rep: map[method]func(*_receiver, *_message){
-		add_receiver: (*_receiver).write,
-		put:          (*_receiver).write,
+		add_queue:      (*_receiver).write,
+		add_receiver:   (*_receiver).write,
+		start_receiver: (*_receiver).write,
+		put:            (*_receiver).write,
 	},
 	act: map[method]func(*_receiver, *_message){
 		put: (*_receiver).put,

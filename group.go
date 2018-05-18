@@ -94,6 +94,13 @@ func (g *_group) removeSender(msg *_message) {
 }
 
 func (g *_group) addSender(msg *_message) {
+	if msg.Source != client {
+		msg.swap()
+		msg.Type = rep
+		msg.Status = role_error
+		g.route(msg)
+		return
+	}
 	connector := msg.getArg("connector").(*_connector)
 	if _, ok := g.senders[connector]; ok {
 		msg.swap()
@@ -105,20 +112,19 @@ func (g *_group) addSender(msg *_message) {
 		g.senders[connector] = s
 		g.putList = append(g.putList, s)
 		g.numSender += 1
-		ctlMsg := newMessage(ctl, group, listener, stop_and_remove_client, undefined_status)
-		ctlMsg.addArg("connector", connector)
-		g.route(ctlMsg)
+		msg.swap()
+		msg.Type = rep
+		msg.Status = success
+		g.route(msg)
 	}
 }
 
 func (g *_group) startSender(msg *_message) {
-	if msg.Status == success {
-		connector := msg.getArg("connector").(*_connector)
-		go g.senders[connector].run()
-		repMsg := newMessage(rep, group, sender, add_sender, success)
-		repMsg.addArg("connector", connector)
-		g.route(repMsg)
-	}
+	go g.senders[msg.getArg("connector").(*_connector)].run()
+	msg.Type = rep
+	msg.Destination = sender
+	msg.Status = success
+	g.route(msg)
 }
 
 func (g *_group) put(msg *_message) {
@@ -137,11 +143,10 @@ func (g *_group) put(msg *_message) {
 var groupHandlerMap = map[msgType]map[method]func(*_group, *_message){
 	ctl: map[method]func(*_group, *_message){
 		add_sender:    (*_group).addSender,
+		start_sender:  (*_group).startSender,
 		remove_sender: (*_group).removeSender,
 	},
-	rep: map[method]func(*_group, *_message){
-		stop_and_remove_client: (*_group).startSender,
-	},
+	rep: map[method]func(*_group, *_message){},
 	act: map[method]func(*_group, *_message){
 		put: (*_group).put,
 	},

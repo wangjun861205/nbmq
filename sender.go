@@ -56,7 +56,9 @@ func (s *_sender) stopSender(msg *_message) {
 var senderHandlerMap = map[msgType]map[method]func(*_sender, *_message){
 	ctl: map[method]func(*_sender, *_message){},
 	rep: map[method]func(*_sender, *_message){
-		add_sender: (*_sender).write,
+		add_sender:   (*_sender).write,
+		start_sender: (*_sender).write,
+		put:          (*_sender).write,
 	},
 	act: map[method]func(*_sender, *_message){
 		put: (*_sender).put,
