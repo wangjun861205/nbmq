@@ -1,12 +1,14 @@
 package nbmq
 
+import "sockutils"
+
 type _group struct {
 	name        string
 	queue       *_queue
 	numSender   int64
 	index       uint64
 	putList     []*_sender
-	senders     map[*_connector]*_sender
+	senders     map[*sockutils.Connector]*_sender
 	workflow    chan *_message
 	controlflow chan *_message
 	stopChan    chan struct{}
@@ -18,7 +20,7 @@ func newGroup(queue *_queue, name string) *_group {
 		name:        name,
 		queue:       queue,
 		putList:     make([]*_sender, 0, 64),
-		senders:     make(map[*_connector]*_sender),
+		senders:     make(map[*sockutils.Connector]*_sender),
 		workflow:    make(chan *_message),
 		controlflow: make(chan *_message),
 		stopChan:    make(chan struct{}),
@@ -29,7 +31,7 @@ func newGroup(queue *_queue, name string) *_group {
 }
 
 func (g *_group) routeToSender(msg *_message) {
-	connector := msg.getArg("connector").(*_connector)
+	connector := msg.getArg("connector").(*sockutils.Connector)
 	if s, ok := g.senders[connector]; !ok {
 		msg.swap()
 		msg.Source = group
@@ -37,6 +39,7 @@ func (g *_group) routeToSender(msg *_message) {
 		g.route(msg)
 	} else {
 		go func() {
+			defer recover()
 			s.workflow <- msg
 		}()
 	}
@@ -75,7 +78,7 @@ func (g *_group) removeGroup(msg *_message) {
 }
 
 func (g *_group) removeSender(msg *_message) {
-	connector := msg.getArg("connector").(*_connector)
+	connector := msg.getArg("connector").(*sockutils.Connector)
 	delete(g.senders, connector)
 	index := -1
 	for i, s := range g.putList {
@@ -101,7 +104,7 @@ func (g *_group) addSender(msg *_message) {
 		g.route(msg)
 		return
 	}
-	connector := msg.getArg("connector").(*_connector)
+	connector := msg.getArg("connector").(*sockutils.Connector)
 	if _, ok := g.senders[connector]; ok {
 		msg.swap()
 		msg.Type = rep
@@ -120,7 +123,7 @@ func (g *_group) addSender(msg *_message) {
 }
 
 func (g *_group) startSender(msg *_message) {
-	go g.senders[msg.getArg("connector").(*_connector)].run()
+	go g.senders[msg.getArg("connector").(*sockutils.Connector)].run()
 	msg.Type = rep
 	msg.Destination = sender
 	msg.Status = success
@@ -134,8 +137,9 @@ func (g *_group) put(msg *_message) {
 	msg.addArg("group", g.name)
 	msg.Destination = sender
 	i := int64(g.index) % g.numSender
+	s := g.putList[i]
 	go func() {
-		g.putList[i].workflow <- msg
+		s.workflow <- msg
 	}()
 	g.index += 1
 }

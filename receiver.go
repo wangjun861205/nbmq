@@ -1,14 +1,20 @@
 package nbmq
 
+import (
+	"encoding/json"
+	"fmt"
+	"sockutils"
+)
+
 type _receiver struct {
-	connector   *_connector
+	connector   *sockutils.Connector
 	workflow    chan *_message
 	controlflow chan *_message
 	stopChan    chan struct{}
 	pauseChan   chan struct{}
 }
 
-func newReceiver(connector *_connector, workflow chan *_message) *_receiver {
+func newReceiver(connector *sockutils.Connector, workflow chan *_message) *_receiver {
 	receiver := &_receiver{
 		connector:   connector,
 		workflow:    workflow,
@@ -35,6 +41,7 @@ func (r *_receiver) put(msg *_message) {
 	msg.addArg("connector", r.connector)
 	msg.Destination = queue
 	r.route(msg)
+	fmt.Println("=========================")
 }
 
 func (r *_receiver) route(msg *_message) {
@@ -45,18 +52,16 @@ func (r *_receiver) route(msg *_message) {
 }
 
 func (r *_receiver) write(msg *_message) {
-	go func() {
-		defer func() {
-			err := recover()
-			if err != nil {
-				msg.swap()
-				msg.Type = rep
-				msg.Status = connector_write_error
-				r.route(msg)
-			}
-		}()
-		r.connector.writer.msgChan <- msg
-	}()
+	b, err := json.Marshal(msg)
+	if err != nil {
+		msg.swap()
+		msg.Type = rep
+		msg.Status = marshal_message_error
+		msg.Data = []byte(err.Error())
+		r.route(msg)
+		return
+	}
+	r.connector.Write(b)
 }
 
 var receiverHandlerMap = map[msgType]map[method]func(*_receiver, *_message){
@@ -83,19 +88,34 @@ func (r *_receiver) handle(msg *_message) {
 func (r *_receiver) run() {
 	for {
 		select {
-		case <-r.connector.done:
+		case <-r.connector.Done():
 			ctlMsg := newMessage(ctl, receiver, queue, remove_receiver, undefined_status)
+			close(r.controlflow)
 			r.route(ctlMsg)
 			return
 		case <-r.stopChan:
 			return
 		case <-r.pauseChan:
 			<-r.pauseChan
-		case msg := <-r.connector.reader.msgChan:
+		case b, ok := <-r.connector.ReadChan():
+			if !ok {
+				continue
+			}
+			var msg _message
+			err := json.Unmarshal(b, &msg)
+			if err != nil {
+				msg.swap()
+				msg.Type = rep
+				msg.Source = receiver
+				msg.Status = unmarshal_message_error
+				msg.Data = []byte(err.Error())
+				r.route(&msg)
+				continue
+			}
 			if msg.Destination == receiver {
-				r.handle(msg)
+				r.handle(&msg)
 			} else {
-				r.route(msg)
+				r.route(&msg)
 			}
 		case msg := <-r.controlflow:
 			if msg.Destination == receiver {

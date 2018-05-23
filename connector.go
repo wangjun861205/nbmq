@@ -1,7 +1,9 @@
 package nbmq
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"net"
 )
 
@@ -22,23 +24,28 @@ func newReader(conn *net.TCPConn) *_reader {
 }
 
 func (r *_reader) run() {
+	buffer := make([]byte, 1024)
+	content := make([]byte, 0, 4096)
+	var msgContent []byte
 	for {
-		b, err := readConn(r.conn)
+		n, err := r.conn.Read(buffer)
 		if err != nil {
 			close(r.done)
 			r.conn.Close()
 			return
 		}
-		if msg, ok := unmarshalMessage(b); !ok {
-			b, _ = json.Marshal(msg)
-			if _, err := r.conn.Write(b); err != nil {
-				close(r.done)
-				return
+		content = append(content, buffer[:n]...)
+		if i := bytes.Index(content, []byte("\r\n\r\n")); i != -1 {
+			var msg _message
+			msgContent, content = content[:i], content[i+4:]
+			err := json.Unmarshal(msgContent, &msg)
+			if err != nil {
+				fmt.Println(err)
+				continue
 			}
-		} else {
-			go func() {
+			go func(msg *_message) {
 				r.msgChan <- msg
-			}()
+			}(&msg)
 		}
 	}
 }
@@ -62,10 +69,15 @@ func (w *_writer) run() {
 			close(w.done)
 			return
 		}
-		b, _ := json.Marshal(msg)
-		b = append(b, []byte("\r\n\r\n")...)
-		_, err := w.conn.Write(b)
+		b, err := json.Marshal(msg)
 		if err != nil {
+			fmt.Println(err.Error())
+			continue
+		}
+		b = append(b, []byte("\r\n\r\n")...)
+		_, err = w.conn.Write(b)
+		if err != nil {
+			fmt.Println(err)
 			close(w.done)
 			return
 		}

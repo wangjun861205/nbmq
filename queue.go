@@ -1,8 +1,12 @@
 package nbmq
 
+import (
+	"sockutils"
+)
+
 type _queue struct {
 	topic       string
-	receivers   map[*_connector]*_receiver
+	receivers   map[*sockutils.Connector]*_receiver
 	groups      map[string]*_group
 	listener    *_listener
 	workflow    chan *_message
@@ -14,7 +18,7 @@ type _queue struct {
 func newQueue(topic string, listener *_listener) *_queue {
 	queue := &_queue{
 		topic:       topic,
-		receivers:   make(map[*_connector]*_receiver),
+		receivers:   make(map[*sockutils.Connector]*_receiver),
 		groups:      make(map[string]*_group),
 		listener:    listener,
 		workflow:    make(chan *_message),
@@ -94,7 +98,7 @@ func (q *_queue) addGroup(msg *_message) {
 }
 
 func (q *_queue) removeReceiver(msg *_message) {
-	connector := msg.getArg("connector").(*_connector)
+	connector := msg.getArg("connector").(*sockutils.Connector)
 	delete(q.receivers, connector)
 }
 
@@ -106,7 +110,7 @@ func (q *_queue) addReceiver(msg *_message) {
 		q.route(msg)
 		return
 	}
-	connector := msg.getArg("connector").(*_connector)
+	connector := msg.getArg("connector").(*sockutils.Connector)
 	if _, ok := q.receivers[connector]; ok {
 		msg.swap()
 		msg.Type = rep
@@ -123,7 +127,7 @@ func (q *_queue) addReceiver(msg *_message) {
 }
 
 func (q *_queue) startReceiver(msg *_message) {
-	go q.receivers[msg.getArg("connector").(*_connector)].run()
+	go q.receivers[msg.getArg("connector").(*sockutils.Connector)].run()
 	msg.Type = rep
 	msg.Destination = receiver
 	msg.Status = success
@@ -146,7 +150,7 @@ func (q *_queue) routeToGroup(msg *_message) {
 }
 
 func (q *_queue) routeToReceiver(msg *_message) {
-	connector := msg.getArg("connector").(*_connector)
+	connector := msg.getArg("connector").(*sockutils.Connector)
 	if r, ok := q.receivers[connector]; !ok {
 		msg.swap()
 		msg.Source = queue
@@ -154,6 +158,7 @@ func (q *_queue) routeToReceiver(msg *_message) {
 		q.route(msg)
 	} else {
 		go func() {
+			defer recover()
 			r.controlflow <- msg
 		}()
 	}

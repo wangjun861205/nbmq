@@ -1,7 +1,12 @@
 package nbmq
 
+import (
+	"encoding/json"
+	"sockutils"
+)
+
 type _sender struct {
-	connector   *_connector
+	connector   *sockutils.Connector
 	readChan    chan *_message
 	writeChan   chan *_message
 	workflow    chan *_message
@@ -10,7 +15,7 @@ type _sender struct {
 	pauseChan   chan struct{}
 }
 
-func newSender(connector *_connector, controlflow chan *_message) *_sender {
+func newSender(connector *sockutils.Connector, controlflow chan *_message) *_sender {
 	sender := &_sender{
 		connector:   connector,
 		readChan:    make(chan *_message),
@@ -24,18 +29,16 @@ func newSender(connector *_connector, controlflow chan *_message) *_sender {
 }
 
 func (s *_sender) write(msg *_message) {
-	go func() {
-		defer func() {
-			err := recover()
-			if err != nil {
-				msg.swap()
-				msg.Type = rep
-				msg.Status = connector_write_error
-				s.route(msg)
-			}
-		}()
-		s.connector.writer.msgChan <- msg
-	}()
+	b, err := json.Marshal(msg)
+	if err != nil {
+		msg.swap()
+		msg.Type = rep
+		msg.Status = marshal_message_error
+		msg.Data = []byte(err.Error())
+		s.route(msg)
+		return
+	}
+	s.connector.Write(b)
 }
 
 func (s *_sender) route(msg *_message) {
@@ -76,19 +79,33 @@ func (s *_sender) handle(msg *_message) {
 func (s *_sender) run() {
 	for {
 		select {
-		case <-s.connector.done:
+		case <-s.connector.Done():
 			ctlMsg := newMessage(ctl, sender, group, remove_sender, undefined_status)
 			s.route(ctlMsg)
+			close(s.workflow)
 			return
 		case <-s.stopChan:
 			return
 		case <-s.pauseChan:
 			<-s.pauseChan
-		case msg := <-s.connector.reader.msgChan:
+		case b, ok := <-s.connector.ReadChan():
+			if !ok {
+				continue
+			}
+			var msg _message
+			err := json.Unmarshal(b, &msg)
+			if err != nil {
+				msg.swap()
+				msg.Type = rep
+				msg.Status = unmarshal_message_error
+				msg.Data = []byte(err.Error())
+				s.route(&msg)
+				continue
+			}
 			if msg.Destination == sender {
-				s.handle(msg)
+				s.handle(&msg)
 			} else {
-				s.route(msg)
+				s.route(&msg)
 			}
 		case msg := <-s.workflow:
 			if msg.Destination == sender {

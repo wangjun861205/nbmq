@@ -1,11 +1,14 @@
 package nbmq
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
+	"sockutils"
 )
 
 type _client struct {
-	connector   *_connector
+	connector   *sockutils.Connector
 	workflow    chan *_message
 	controlflow chan *_message
 	stopChan    chan struct{}
@@ -13,7 +16,7 @@ type _client struct {
 }
 
 func newClient(conn *net.TCPConn, workflow chan *_message) *_client {
-	connector := newConnector(conn)
+	connector := sockutils.NewConnector(conn, "\r\n\r\n")
 	client := &_client{
 		connector:   connector,
 		workflow:    workflow,
@@ -37,18 +40,16 @@ func (c *_client) stop() {
 }
 
 func (c *_client) write(msg *_message) {
-	go func() {
-		defer func() {
-			err := recover()
-			if err != nil {
-				msg.swap()
-				msg.Type = rep
-				msg.Status = connector_write_error
-				c.route(msg)
-			}
-		}()
-		c.connector.writer.msgChan <- msg
-	}()
+	b, err := json.Marshal(msg)
+	if err != nil {
+		msg.swap()
+		msg.Type = rep
+		msg.Status = marshal_message_error
+		msg.Data = []byte(err.Error())
+		c.route(msg)
+		return
+	}
+	c.connector.Write(b)
 }
 
 func (c *_client) handleAddReceiverRep(msg *_message) {
@@ -102,10 +103,11 @@ func (c *_client) handle(msg *_message) {
 func (c *_client) run() {
 	for {
 		select {
-		case <-c.connector.done:
+		case <-c.connector.Done():
 			ctlMsg := newMessage(ctl, client, listener, remove_client, undefined_status)
 			ctlMsg.addArg("connector", c.connector)
 			c.route(ctlMsg)
+			close(c.controlflow)
 			return
 		case <-c.stopChan:
 			return
@@ -117,11 +119,20 @@ func (c *_client) run() {
 			} else {
 				continue
 			}
-		case msg := <-c.connector.reader.msgChan:
+		case b, ok := <-c.connector.ReadChan():
+			if !ok {
+				continue
+			}
+			var msg _message
+			err := json.Unmarshal(b, &msg)
+			if err != nil {
+				fmt.Println("client unmarshal error: " + err.Error())
+				continue
+			}
 			if msg.Destination == client {
-				c.handle(msg)
+				c.handle(&msg)
 			} else {
-				c.route(msg)
+				c.route(&msg)
 			}
 		}
 	}

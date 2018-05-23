@@ -1,40 +1,44 @@
 package nbmq
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
+	"sockutils"
 )
 
 type Client struct {
-	connector *_connector
+	connector *sockutils.Connector
 	role      role
-	handler   func([]byte)
+	dataChan  chan []byte
 	done      chan struct{}
 }
 
-func NewClient(addr string, handler func([]byte)) (*Client, error) {
+func NewClient(addr string) (*Client, error) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
 	tcpConn := conn.(*net.TCPConn)
 	tcpConn.SetKeepAlive(true)
-	connector := newConnector(tcpConn)
-	client := &Client{connector, client, handler, make(chan struct{})}
+	tcpConn.SetNoDelay(true)
+	connector := sockutils.NewConnector(tcpConn, "\r\n\r\n")
+	client := &Client{connector, client, make(chan []byte), make(chan struct{})}
 	go client.run()
 	return client, nil
 }
 
 func (c *Client) write(msg *_message) {
-	go func() {
-		defer func() {
-			err := recover()
-			if err != nil {
-				fmt.Println(err)
-			}
-		}()
-		c.connector.writer.msgChan <- msg
-	}()
+	b, err := json.Marshal(msg)
+	if err != nil {
+		msg.Type = rep
+		msg.Status = marshal_message_error
+		msg.Data = []byte(err.Error())
+		b, _ := json.Marshal(msg)
+		c.connector.Write(b)
+		return
+	}
+	c.connector.Write(b)
 }
 
 func (c *Client) AddQueue(topic string) {
@@ -101,15 +105,14 @@ func (c *Client) Put(data []byte) {
 }
 
 func (c *Client) Close() {
-	c.connector.reader.conn.Close()
+	c.connector.Close()
 }
 
-func (c *Client) handleMsg(msg *_message) {
-	if c.handler != nil {
-		go func() {
-			c.handler(msg.Data)
-		}()
-	}
+func (c *Client) handlPutMsg(msg *_message) {
+	go func() {
+		defer recover()
+		c.dataChan <- msg.Data
+	}()
 }
 
 func (c *Client) addGroupRep(msg *_message) {
@@ -142,6 +145,10 @@ func (c *Client) putRep(msg *_message) {
 	fmt.Println(msg)
 }
 
+func (c *Client) Done() chan struct{} {
+	return c.done
+}
+
 var mqclientHandlerMap = map[msgType]map[method]func(*Client, *_message){
 	ctl: map[method]func(*Client, *_message){},
 	rep: map[method]func(*Client, *_message){
@@ -155,7 +162,7 @@ var mqclientHandlerMap = map[msgType]map[method]func(*Client, *_message){
 		put:            (*Client).putRep,
 	},
 	act: map[method]func(*Client, *_message){
-		put: (*Client).handleMsg,
+		put: (*Client).handlPutMsg,
 	},
 }
 
@@ -167,15 +174,33 @@ func (c *Client) handle(msg *_message) {
 	h(c, msg)
 }
 
+func (c *Client) DataChan() chan []byte {
+	return c.dataChan
+}
+
 func (c *Client) run() {
 	for {
 		select {
-		case <-c.connector.done:
+		case <-c.connector.Done():
 			fmt.Println("connection has closed")
+			close(c.dataChan)
 			close(c.done)
 			return
-		case msg := <-c.connector.reader.msgChan:
-			c.handle(msg)
+		case b, ok := <-c.connector.ReadChan():
+			if !ok {
+				continue
+			}
+			var msg _message
+			err := json.Unmarshal(b, &msg)
+			if err != nil {
+				msg.Type = rep
+				msg.Status = unmarshal_message_error
+				msg.Data = []byte(err.Error())
+				b, _ := json.Marshal(msg)
+				c.connector.Write(b)
+				continue
+			}
+			c.handle(&msg)
 		}
 	}
 }

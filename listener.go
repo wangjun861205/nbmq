@@ -5,12 +5,13 @@ import (
 	"log"
 	"net"
 	"os"
+	"sockutils"
 )
 
 type _listener struct {
 	listener    net.Listener
 	queues      map[string]*_queue
-	clients     map[*_connector]*_client
+	clients     map[*sockutils.Connector]*_client
 	workflow    chan *_message
 	controlflow chan *_message
 	stopChan    chan struct{}
@@ -27,7 +28,7 @@ func NewListener(addr string) (*_listener, error) {
 	return &_listener{
 		listener:    l,
 		queues:      make(map[string]*_queue),
-		clients:     make(map[*_connector]*_client),
+		clients:     make(map[*sockutils.Connector]*_client),
 		workflow:    make(chan *_message),
 		controlflow: make(chan *_message),
 		stopChan:    make(chan struct{}),
@@ -84,7 +85,7 @@ func (l *_listener) listen() {
 }
 
 func (l *_listener) routeToClient(msg *_message) {
-	connector := msg.getArg("connector").(*_connector)
+	connector := msg.getArg("connector").(*sockutils.Connector)
 	if c, ok := l.clients[connector]; !ok {
 		msg.swap()
 		msg.Type = rep
@@ -92,6 +93,7 @@ func (l *_listener) routeToClient(msg *_message) {
 		l.route(msg)
 	} else {
 		go func() {
+			defer recover()
 			c.controlflow <- msg
 		}()
 	}
@@ -131,7 +133,7 @@ func (l *_listener) route(msg *_message) {
 }
 
 func (l *_listener) stopAndRemoveClient(msg *_message) {
-	connector := msg.getArg("connector").(*_connector)
+	connector := msg.getArg("connector").(*sockutils.Connector)
 	close(l.clients[connector].stopChan)
 	delete(l.clients, connector)
 	msg.swap()
@@ -141,7 +143,7 @@ func (l *_listener) stopAndRemoveClient(msg *_message) {
 }
 
 func (l *_listener) removeClient(msg *_message) {
-	connector := msg.getArg("connector").(*_connector)
+	connector := msg.getArg("connector").(*sockutils.Connector)
 	delete(l.clients, connector)
 }
 
